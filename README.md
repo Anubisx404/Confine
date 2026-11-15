@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/main_project_icon.png" alt="Confine logo" width="180" />
+</p>
+
 # Confine
 
 > **Fast, dense, unimpressed spatial codebase explorer and static analyzer.**  

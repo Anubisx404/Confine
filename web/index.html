@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Confine</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#sidebar">Skip to inspector</a>
+  <div id="app" class="app-shell">
+    <header class="toolbar" id="toolbar">
+      <div class="toolbar-group toolbar-left">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <rect x="1" y="1" width="5" height="5" fill="currentColor"></rect>
+              <rect x="8" y="1" width="5" height="3" fill="currentColor" fill-opacity="0.55"></rect>
+              <rect x="8" y="6" width="5" height="7" fill="currentColor" fill-opacity="0.8"></rect>
+              <rect x="1" y="8" width="5" height="5" fill="currentColor" fill-opacity="0.4"></rect>
+            </svg>
+          </span>
+          <span class="brand-title">Confine</span>
+        </div>
+        <form id="workspace-form" class="workspace-form">
+          <span id="project-tag" class="project-tag">workspace</span>
+          <input id="workspace-path" class="workspace-input" type="text" placeholder="Directory path..." autocomplete="off" spellcheck="false" aria-label="Workspace directory path">
+          <button id="open-workspace-btn" class="btn btn-primary" type="submit">Open</button>
+          <button id="browse-folder-btn" class="btn" type="button" title="Open native OS folder picker">Browse…</button>
+          <button id="dirs-toggle-btn" class="btn" type="button" aria-expanded="false" aria-controls="dirs-drawer" title="Toggle inline disk folder browser">Dirs</button>
+          <button id="excludes-toggle-btn" class="btn" type="button" aria-expanded="false" aria-controls="excludes-drawer" title="Toggle file and folder exclusions">Excludes (<span id="excludes-count">0</span>)</button>
+          <span id="workspace-spinner" class="spinner hidden" aria-hidden="true"></span>
+        </form>
+      </div>
+
+      <div class="toolbar-group toolbar-center">
+        <div class="segmented" role="group" aria-label="View mode">
+          <button id="mode-2d-btn" class="seg-btn active" type="button" data-mode="2d" title="2D Top-Down (2)">2D</button>
+          <button id="mode-3d-btn" class="seg-btn" type="button" data-mode="3d" title="3D City (3)">3D</button>
+        </div>
+        <button id="fit-btn" class="btn" type="button" title="Fit Entire Map (F / R)">Fit</button>
+        <div class="preset-group">
+          <label class="preset-label" for="preset-select">Size</label>
+          <select id="preset-select" class="select-input" aria-label="Layout preset">
+            <option value="sloc">SLOC</option>
+            <option value="bytes">Bytes</option>
+            <option value="symbols">Symbols</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="toolbar-group toolbar-right">
+        <div id="status-readout" class="status-readout">
+          <span id="stat-files" class="stat-item">0 files</span>
+          <span class="stat-sep" aria-hidden="true">·</span>
+          <span id="stat-sloc" class="stat-item">0 SLOC</span>
+          <span class="stat-sep" aria-hidden="true">·</span>
+          <span id="stat-fps" class="stat-item">0 FPS</span>
+          <span id="stat-hover" class="stat-hover" title="Hovered path">Ready</span>
+        </div>
+      </div>
+    </header>
+
+    <section id="dirs-drawer" class="toolbar-drawer hidden" aria-label="Disk folder browser">
+      <div class="drawer-header">
+        <div class="drawer-title-group">
+          <span class="drawer-kicker">DISK NAVIGATOR</span>
+          <div id="fs-roots" class="fs-roots"></div>
+        </div>
+        <div class="drawer-actions">
+          <button id="fs-up-btn" class="btn btn-sm" type="button" title="Go to parent directory">.. Up</button>
+          <button id="fs-open-current-btn" class="btn btn-sm btn-primary" type="button">Open This Folder</button>
+          <button id="dirs-close-btn" class="btn btn-sm" type="button" aria-label="Close disk navigator">Close</button>
+        </div>
+      </div>
+      <div class="drawer-subbar">
+        <span class="drawer-label">cwd</span>
+        <code id="fs-current-path" class="fs-current-path">-</code>
+        <span id="fs-entry-count" class="drawer-meta">0 items</span>
+      </div>
+      <div id="fs-entries" class="fs-entries"></div>
+    </section>
+
+    <section id="excludes-drawer" class="toolbar-drawer hidden" aria-label="Exclusions manager">
+      <div class="drawer-header">
+        <form id="exclude-form" class="exclude-form">
+          <span class="drawer-kicker">EXCLUDES</span>
+          <input id="exclude-pattern-input" class="workspace-input exclude-input" type="text" placeholder="Path, folder/, or glob (*_test.go, docs/, *.json)..." autocomplete="off" spellcheck="false" aria-label="Exclude pattern">
+          <button id="exclude-add-btn" class="btn btn-sm btn-primary" type="submit">Add</button>
+        </form>
+        <div class="drawer-actions">
+          <div class="quick-excludes" role="group" aria-label="Quick exclude presets">
+            <button class="btn btn-sm quick-exclude-btn" type="button" data-preset="tests">Tests</button>
+            <button class="btn btn-sm quick-exclude-btn" type="button" data-preset="markdowns">Markdowns</button>
+            <button class="btn btn-sm quick-exclude-btn" type="button" data-preset="configs">Configs</button>
+            <button class="btn btn-sm quick-exclude-btn" type="button" data-preset="assets">CSS/Assets</button>
+          </div>
+          <button id="exclude-clear-btn" class="btn btn-sm" type="button">Clear All</button>
+          <button id="excludes-close-btn" class="btn btn-sm" type="button" aria-label="Close exclusions drawer">Close</button>
+        </div>
+      </div>
+      <div id="excludes-list" class="excludes-list"></div>
+    </section>
+
+    <div class="breadcrumb-bar" id="breadcrumb-bar">
+      <span class="breadcrumb-prefix">selected:</span>
+      <nav id="breadcrumb-trail" class="breadcrumb-trail" aria-label="Selected path breadcrumb"></nav>
+      <span id="breadcrumb-line" class="breadcrumb-line hidden"></span>
+    </div>
+
+    <main class="main-split" id="main-split">
+      <section class="viewport-pane" id="viewport-pane">
+        <canvas id="gl-canvas" class="gl-canvas"></canvas>
+        <canvas id="overlay-canvas" class="overlay-canvas"></canvas>
+        <div id="viewport-empty" class="viewport-empty hidden">No source files indexed in this workspace.</div>
+        <div id="viewport-hints" class="viewport-hints">Click File: Focus · Esc: Unfocus · Wheel: Zoom/Scroll · Drag: Pan · Right/Shift+Drag: Orbit 3D · /: Search · X: Exclude</div>
+      </section>
+
+      <div id="split-handle" class="split-handle" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" aria-valuemin="260" aria-valuemax="720" aria-valuenow="368" tabindex="0"></div>
+
+      <aside class="sidebar" id="sidebar">
+        <nav class="tab-bar" role="tablist" aria-label="Inspector panels">
+          <button class="tab-btn active" type="button" role="tab" aria-selected="true" tabindex="0" data-tab="inspector" id="tab-btn-inspector">Inspector</button>
+          <button class="tab-btn" type="button" role="tab" aria-selected="false" tabindex="-1" data-tab="search" id="tab-btn-search">Search <span id="search-tab-count" class="tab-count hidden">0</span></button>
+          <button class="tab-btn" type="button" role="tab" aria-selected="false" tabindex="-1" data-tab="history" id="tab-btn-history">History <span id="history-tab-count" class="tab-count hidden">0</span></button>
+          <button class="tab-btn" type="button" role="tab" aria-selected="false" tabindex="-1" data-tab="markdowns" id="tab-btn-markdowns">Markdowns <span id="markdowns-tab-count" class="tab-count hidden">0</span></button>
+        </nav>
+
+        <section id="tab-inspector" class="tab-panel active" role="tabpanel" aria-labelledby="tab-btn-inspector">
+          <div id="inspector-empty" class="empty-state">Select any directory or file tile on the map to inspect metrics, symbols, imports, and calls.</div>
+          <div id="inspector-content" class="inspector-content hidden">
+            <div class="insp-header">
+              <div class="insp-title-row">
+                <div class="insp-headline">
+                  <h2 id="insp-name" class="insp-name">-</h2>
+                  <span class="insp-sep" aria-hidden="true">-</span>
+                  <span id="insp-kind" class="insp-kind">file</span>
+                </div>
+                <div class="insp-actions">
+                  <button id="insp-fly-btn" class="btn btn-xs" type="button" title="Fly to node">Fly</button>
+                  <button id="insp-exclude-btn" class="btn btn-xs btn-danger-outline" type="button" title="Exclude selected file or folder (X)">Exclude</button>
+                </div>
+              </div>
+              <div class="insp-path-row">
+                <code id="insp-path" class="insp-path">-</code>
+                <button id="copy-path-btn" class="btn btn-xs" type="button" title="Copy relative path">Copy</button>
+              </div>
+              <div class="insp-ledger">
+                <div class="ledger-line">
+                  <span id="insp-line" class="ledger-accent">line -</span>
+                  <span class="ledger-dot" aria-hidden="true">·</span>
+                  <span id="insp-lang" class="ledger-muted">-</span>
+                </div>
+                <div id="insp-metrics-lines" class="ledger-line">0 source lines · 0 total · 0 B</div>
+                <div id="insp-metrics-tree" class="ledger-line">0 children · 0 descendants</div>
+              </div>
+            </div>
+
+            <div class="analysis-section">
+              <div class="section-header">
+                <h3>Symbols</h3>
+                <span id="insp-symbols-count" class="section-count">0</span>
+              </div>
+              <div id="insp-symbols-list" class="symbol-list"></div>
+            </div>
+
+            <div class="analysis-section">
+              <div class="section-header">
+                <h3>Imports</h3>
+                <span id="insp-imports-count" class="section-count">0</span>
+              </div>
+              <div id="insp-imports-list" class="import-list"></div>
+            </div>
+
+            <div class="analysis-section">
+              <div class="section-header">
+                <h3>Top Calls</h3>
+                <span id="insp-calls-count" class="section-count">0</span>
+              </div>
+              <div id="insp-calls-list" class="calls-list"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-search" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-search">
+          <div class="search-controls">
+            <div class="search-input-wrap">
+              <input id="search-input" class="search-input" type="text" placeholder="Search code, symbols, paths (/ or Ctrl+K)..." autocomplete="off" spellcheck="false" aria-label="Search codebase">
+              <button id="search-clear-btn" class="btn btn-xs hidden" type="button" title="Clear search">Clear</button>
+            </div>
+            <div id="search-status" class="search-status">Type to search indexed files</div>
+          </div>
+          <div id="search-results" class="search-results"></div>
+        </section>
+
+        <section id="tab-history" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-history">
+          <div class="history-toolbar">
+            <button id="history-back-btn" class="btn btn-sm" type="button" title="Back (Alt+Left)" disabled>Back</button>
+            <button id="history-forward-btn" class="btn btn-sm" type="button" title="Forward (Alt+Right)" disabled>Forward</button>
+            <button id="history-clear-btn" class="btn btn-sm history-clear" type="button">Clear</button>
+          </div>
+          <div id="history-list" class="history-list">
+            <div class="empty-state">Navigation history will appear here as you explore files and search hits.</div>
+          </div>
+        </section>
+
+        <section id="tab-markdowns" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-markdowns">
+          <div class="markdown-controls">
+            <input id="markdown-filter" class="search-input" type="text" placeholder="Filter markdown docs..." autocomplete="off" spellcheck="false" aria-label="Filter markdown documents">
+            <span id="markdown-count" class="section-count">0</span>
+          </div>
+          <div id="markdown-list" class="markdown-list"></div>
+          <div id="markdown-preview-wrap" class="markdown-preview-wrap hidden">
+            <div class="markdown-preview-header">
+              <span id="markdown-preview-title" class="markdown-preview-title">-</span>
+              <div class="markdown-preview-actions">
+                <button id="markdown-preview-map-btn" class="btn btn-xs" type="button">Map</button>
+                <button id="markdown-preview-close-btn" class="btn btn-xs" type="button">Close</button>
+              </div>
+            </div>
+            <div id="markdown-preview-body" class="markdown-preview-body"></div>
+          </div>
+        </section>
+      </aside>
+    </main>
+
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  </div>
+
+  <script src="/tokenizer.js"></script>
+  <script src="/renderer.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

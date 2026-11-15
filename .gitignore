@@ -1,0 +1,11 @@
+*.exe
+/confine
+*.out
+*.prof
+*.test
+.DS_Store
+Thumbs.db
+desktop.ini
+scratch/
+tmp/
+.env

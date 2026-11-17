@@ -523,3 +523,44 @@ func TestIndexDirectoryWithOptionsExcludes(t *testing.T) {
 		t.Fatalf("negation must never un-exclude hard-skipped go.sum")
 	}
 }
+
+func TestScanProjectReadmesAndPlans(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, ".gitignore", []byte("docs/\n"))
+	writeTestFile(t, root, "README.md", []byte("# Root\n"))
+	writeTestFile(t, root, "pkg/README", []byte("Pkg readme\n"))
+	writeTestFile(t, root, "docs/plans/future-plan.md", []byte("# Future Plan\n"))
+	writeTestFile(t, root, "ROADMAP.md", []byte("# Roadmap\n"))
+	writeTestFile(t, root, "docs/notes.md", []byte("# Random Note\n"))
+	writeTestFile(t, root, "node_modules/dep/README.md", []byte("# Ignored Dep\n"))
+
+	docs, err := ScanProjectReadmesAndPlans(root, nil)
+	if err != nil {
+		t.Fatalf("ScanProjectReadmesAndPlans error: %v", err)
+	}
+	found := make(map[string]bool, len(docs))
+	for _, d := range docs {
+		found[d.RelPath] = true
+	}
+	for _, want := range []string{"README.md", "pkg/README", "docs/plans/future-plan.md", "ROADMAP.md"} {
+		if !found[want] {
+			t.Fatalf("expected %s in project readmes/plans scan, got %v", want, found)
+		}
+	}
+	if found["node_modules/dep/README.md"] {
+		t.Fatalf("node_modules README must stay excluded")
+	}
+	if found["docs/notes.md"] {
+		t.Fatalf("non-plan non-readme docs/notes.md should not be in supplemental scan")
+	}
+
+	excludedDocs, err := ScanProjectReadmesAndPlans(root, []string{"docs/"})
+	if err != nil {
+		t.Fatalf("ScanProjectReadmesAndPlans excluded error: %v", err)
+	}
+	for _, d := range excludedDocs {
+		if d.RelPath == "docs/plans/future-plan.md" {
+			t.Fatalf("expected runtime exclude docs/ to prune docs/plans/future-plan.md")
+		}
+	}
+}

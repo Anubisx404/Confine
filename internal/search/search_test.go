@@ -306,6 +306,41 @@ func TestMarkdownsCatalogSortingAndTitles(t *testing.T) {
 	if mdsAgain[0].Title != "Confine" {
 		t.Fatalf("expected safe slice copy, got %q", mdsAgain[0].Title)
 	}
+	if mdsAgain[0].Category != "readme" || !mdsAgain[0].InMap {
+		t.Fatalf("expected root README.md category=readme inMap=true, got %+v", mdsAgain[0])
+	}
+	if mdsAgain[1].Category != "plan" {
+		t.Fatalf("expected PLAN.md category=plan, got %+v", mdsAgain[1])
+	}
+
+	idx.AddSupplementalMarkdowns([]*indexer.Node{
+		{Name: "README.md", RelPath: "README.md", Stats: indexer.FileStats{LineCount: 99}},
+		{Name: "git-plan.md", RelPath: "docs/plans/git-plan.md", Lines: []string{"# Git Spatial Plan"}, Stats: indexer.FileStats{LineCount: 1, ByteSize: 18}},
+		{Name: "README", RelPath: "sub/README", Lines: []string{"Submodule notes"}, Stats: indexer.FileStats{LineCount: 1, ByteSize: 15}},
+	})
+	merged := idx.Markdowns()
+	if len(merged) != len(expectedOrder)+2 {
+		t.Fatalf("expected %d merged entries, got %d", len(expectedOrder)+2, len(merged))
+	}
+	seenGitPlan := false
+	seenSubReadme := false
+	for _, entry := range merged {
+		if entry.RelPath == "docs/plans/git-plan.md" {
+			seenGitPlan = true
+			if entry.Category != "plan" || entry.InMap || entry.Title != "Git Spatial Plan" {
+				t.Fatalf("unexpected supplemental plan entry: %+v", entry)
+			}
+		}
+		if entry.RelPath == "sub/README" {
+			seenSubReadme = true
+			if entry.Category != "readme" || entry.InMap {
+				t.Fatalf("unexpected supplemental readme entry: %+v", entry)
+			}
+		}
+	}
+	if !seenGitPlan || !seenSubReadme {
+		t.Fatalf("missing supplemental docs: gitPlan=%v subReadme=%v", seenGitPlan, seenSubReadme)
+	}
 }
 
 func buildSyntheticIndex(fileCount int) *Index {

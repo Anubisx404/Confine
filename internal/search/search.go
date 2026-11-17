@@ -42,6 +42,8 @@ type MarkdownEntry struct {
 	Name      string       `json:"name"`
 	RelPath   string       `json:"relPath"`
 	Title     string       `json:"title"`
+	Category  string       `json:"category"`
+	InMap     bool         `json:"inMap"`
 	ByteSize  int64        `json:"byteSize"`
 	LineCount int          `json:"lineCount"`
 	Bounds    treemap.Rect `json:"bounds"`
@@ -107,6 +109,8 @@ func NewIndex(tree *indexer.TreeResult, layout *treemap.LayoutResult) *Index {
 				Name:      name,
 				RelPath:   node.RelPath,
 				Title:     extractMarkdownTitle(node.Lines, name),
+				Category:  ClassifyMarkdownCategory(node.RelPath),
+				InMap:     true,
 				ByteSize:  node.Stats.ByteSize,
 				LineCount: node.Stats.LineCount,
 				Bounds:    bounds,
@@ -633,6 +637,57 @@ func extractMarkdownTitle(lines []string, fallback string) string {
 		}
 	}
 	return fallback
+}
+
+func ClassifyMarkdownCategory(relPath string) string {
+	if indexer.IsReadmePath(relPath) {
+		return "readme"
+	}
+	if indexer.IsPlanPath(relPath) {
+		return "plan"
+	}
+	return "doc"
+}
+
+func (idx *Index) AddSupplementalMarkdowns(nodes []*indexer.Node) {
+	if idx == nil || len(nodes) == 0 {
+		return
+	}
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	seen := make(map[string]struct{}, len(idx.markdowns))
+	for _, entry := range idx.markdowns {
+		seen[entry.RelPath] = struct{}{}
+	}
+
+	added := false
+	for _, node := range nodes {
+		if node == nil || node.IsDir || node.RelPath == "" {
+			continue
+		}
+		if _, exists := seen[node.RelPath]; exists {
+			continue
+		}
+		seen[node.RelPath] = struct{}{}
+		name := node.Name
+		if name == "" {
+			name = path.Base(node.RelPath)
+		}
+		idx.markdowns = append(idx.markdowns, MarkdownEntry{
+			Name:      name,
+			RelPath:   node.RelPath,
+			Title:     extractMarkdownTitle(node.Lines, name),
+			Category:  ClassifyMarkdownCategory(node.RelPath),
+			InMap:     false,
+			ByteSize:  node.Stats.ByteSize,
+			LineCount: node.Stats.LineCount,
+		})
+		added = true
+	}
+	if added {
+		sortMarkdownEntries(idx.markdowns)
+	}
 }
 
 func sortMarkdownEntries(entries []MarkdownEntry) {

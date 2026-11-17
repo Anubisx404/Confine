@@ -45,6 +45,7 @@
     searchAbort: null,
     searchDebounce: null,
     markdowns: [],
+    markdownScope: "all",
     activeMarkdownPath: null,
     history: [],
     historyIndex: -1,
@@ -129,6 +130,12 @@
     historyList: document.getElementById("history-list"),
     markdownFilter: document.getElementById("markdown-filter"),
     markdownCount: document.getElementById("markdown-count"),
+    markdownScopeBar: document.getElementById("markdown-scope-bar"),
+    markdownScopeBtns: Array.from(document.querySelectorAll(".markdown-scope-btn")),
+    scopeCountAll: document.getElementById("scope-count-all"),
+    scopeCountReadme: document.getElementById("scope-count-readme"),
+    scopeCountPlan: document.getElementById("scope-count-plan"),
+    scopeCountDoc: document.getElementById("scope-count-doc"),
     markdownList: document.getElementById("markdown-list"),
     markdownPreviewWrap: document.getElementById("markdown-preview-wrap"),
     markdownPreviewTitle: document.getElementById("markdown-preview-title"),
@@ -1183,14 +1190,98 @@
     return out.join("\n");
   }
 
+  function classifyDocCategory(item) {
+    if (item && (item.category === "readme" || item.category === "plan" || item.category === "doc")) {
+      return item.category;
+    }
+    const slash = String((item && item.relPath) || "").toLowerCase();
+    const base = slash.split("/").pop() || "";
+    if (/^readme(\.|$)/.test(base)) {
+      return "readme";
+    }
+    if (/^(plan|plans|roadmap)(\.|$)/.test(base) || /(^|\/)(plans|\.plans|\.planning|roadmap)\//.test(slash) || /[_-](plan|roadmap)\./.test(base)) {
+      return "plan";
+    }
+    return "doc";
+  }
+
+  function updateMarkdownScopeCounts(items) {
+    let readmes = 0;
+    let plans = 0;
+    let docs = 0;
+    for (const item of items) {
+      const cat = classifyDocCategory(item);
+      if (cat === "readme") {
+        readmes++;
+      } else if (cat === "plan") {
+        plans++;
+      } else {
+        docs++;
+      }
+    }
+    els.scopeCountAll.textContent = String(items.length);
+    els.scopeCountReadme.textContent = String(readmes);
+    els.scopeCountPlan.textContent = String(plans);
+    els.scopeCountDoc.textContent = String(docs);
+    for (const btn of els.markdownScopeBtns) {
+      btn.classList.toggle("active", btn.dataset.scope === state.markdownScope);
+    }
+  }
+
+  function createMarkdownRow(item) {
+    const row = document.createElement("div");
+    row.className = "markdown-item" + (state.activeMarkdownPath === item.relPath ? " active" : "");
+
+    const openBtn = document.createElement("button");
+    openBtn.type = "button";
+    openBtn.className = "markdown-open-btn";
+    const title = document.createElement("span");
+    title.className = "markdown-title";
+    title.textContent = item.title || item.name || item.relPath;
+    const rel = document.createElement("span");
+    rel.className = "markdown-rel";
+    rel.textContent = item.relPath + " (" + formatNumber(item.lineCount) + " lines)";
+    openBtn.appendChild(title);
+    openBtn.appendChild(rel);
+    openBtn.addEventListener("click", function () {
+      openMarkdownPreview(item.relPath);
+    });
+
+    row.appendChild(openBtn);
+
+    if (item.inMap !== false) {
+      const mapBtn = document.createElement("button");
+      mapBtn.type = "button";
+      mapBtn.className = "btn btn-xs";
+      mapBtn.textContent = "Map";
+      mapBtn.title = "Fly to " + item.relPath;
+      mapBtn.addEventListener("click", function () {
+        selectAndFly(item.relPath, null, "markdown");
+      });
+      row.appendChild(mapBtn);
+    } else {
+      const tag = document.createElement("span");
+      tag.className = "markdown-tag";
+      tag.textContent = "off-map";
+      tag.title = "Discovered outside treemap scope (.gitignore)";
+      row.appendChild(tag);
+    }
+    return row;
+  }
+
   async function openMarkdownPreview(relPath) {
     if (!relPath) {
       return;
     }
     state.activeMarkdownPath = relPath;
     renderMarkdownList();
+    const matchedEntry = state.markdowns.find(function (m) {
+      return m.relPath === relPath;
+    });
+    els.markdownPreviewMapBtn.classList.toggle("hidden", matchedEntry ? matchedEntry.inMap === false : false);
     els.markdownPreviewTitle.textContent = relPath;
     els.markdownPreviewWrap.classList.remove("hidden");
+    els.markdownList.classList.add("has-preview");
     els.markdownPreviewBody.innerHTML = '<div class="empty-state">Loading preview...</div>';
 
     try {
@@ -1206,59 +1297,80 @@
 
   function renderMarkdownList() {
     const filter = els.markdownFilter.value.trim().toLowerCase();
-    const filtered = state.markdowns.filter(function (item) {
+    const textMatched = state.markdowns.filter(function (item) {
       if (!filter) {
         return true;
       }
+      const cat = classifyDocCategory(item);
       return (
         (item.title || "").toLowerCase().includes(filter) ||
         (item.relPath || "").toLowerCase().includes(filter) ||
-        (item.name || "").toLowerCase().includes(filter)
+        (item.name || "").toLowerCase().includes(filter) ||
+        cat.includes(filter)
       );
     });
 
+    updateMarkdownScopeCounts(textMatched);
+
+    const filtered = state.markdownScope === "all"
+      ? textMatched
+      : textMatched.filter(function (item) {
+          return classifyDocCategory(item) === state.markdownScope;
+        });
+
     els.markdownCount.textContent = String(filtered.length);
+    els.markdownList.classList.toggle("has-preview", !els.markdownPreviewWrap.classList.contains("hidden"));
     els.markdownList.innerHTML = "";
 
     if (filtered.length === 0) {
       const empty = document.createElement("div");
       empty.className = "empty-state";
-      empty.textContent = state.markdowns.length === 0 ? "No markdown documents found in workspace." : "No matching markdown files.";
+      if (state.markdowns.length === 0) {
+        empty.textContent = "No markdown documents found in workspace.";
+      } else if (state.markdownScope === "readme") {
+        empty.textContent = "No matching README files.";
+      } else if (state.markdownScope === "plan") {
+        empty.textContent = "No matching plan files.";
+      } else {
+        empty.textContent = "No matching markdown files.";
+      }
       els.markdownList.appendChild(empty);
       return;
     }
 
+    if (state.markdownScope !== "all") {
+      for (const item of filtered) {
+        els.markdownList.appendChild(createMarkdownRow(item));
+      }
+      return;
+    }
+
+    const groups = [
+      { key: "readme", label: "READMEs", items: [] },
+      { key: "plan", label: "Plans", items: [] },
+      { key: "doc", label: "Other Docs", items: [] }
+    ];
+    const groupMap = { readme: groups[0], plan: groups[1], doc: groups[2] };
     for (const item of filtered) {
-      const row = document.createElement("div");
-      row.className = "markdown-item" + (state.activeMarkdownPath === item.relPath ? " active" : "");
+      groupMap[classifyDocCategory(item)].items.push(item);
+    }
 
-      const openBtn = document.createElement("button");
-      openBtn.type = "button";
-      openBtn.className = "markdown-open-btn";
-      const title = document.createElement("span");
-      title.className = "markdown-title";
-      title.textContent = item.title || item.name || item.relPath;
-      const rel = document.createElement("span");
-      rel.className = "markdown-rel";
-      rel.textContent = item.relPath + " (" + formatNumber(item.lineCount) + " lines)";
-      openBtn.appendChild(title);
-      openBtn.appendChild(rel);
-      openBtn.addEventListener("click", function () {
-        openMarkdownPreview(item.relPath);
-      });
-
-      const mapBtn = document.createElement("button");
-      mapBtn.type = "button";
-      mapBtn.className = "btn btn-xs";
-      mapBtn.textContent = "Map";
-      mapBtn.title = "Fly to " + item.relPath;
-      mapBtn.addEventListener("click", function () {
-        selectAndFly(item.relPath, null, "markdown");
-      });
-
-      row.appendChild(openBtn);
-      row.appendChild(mapBtn);
-      els.markdownList.appendChild(row);
+    for (const group of groups) {
+      if (group.items.length === 0) {
+        continue;
+      }
+      const hdr = document.createElement("div");
+      hdr.className = "markdown-group-header";
+      const labelSpan = document.createElement("span");
+      labelSpan.textContent = group.label;
+      const countSpan = document.createElement("span");
+      countSpan.textContent = String(group.items.length);
+      hdr.appendChild(labelSpan);
+      hdr.appendChild(countSpan);
+      els.markdownList.appendChild(hdr);
+      for (const item of group.items) {
+        els.markdownList.appendChild(createMarkdownRow(item));
+      }
     }
   }
 
@@ -1646,6 +1758,13 @@
       renderMarkdownList();
     });
 
+    for (const scopeBtn of els.markdownScopeBtns) {
+      scopeBtn.addEventListener("click", function () {
+        state.markdownScope = scopeBtn.dataset.scope || "all";
+        renderMarkdownList();
+      });
+    }
+
     els.markdownPreviewMapBtn.addEventListener("click", function () {
       if (state.activeMarkdownPath) {
         selectAndFly(state.activeMarkdownPath, null, "markdown");
@@ -1655,6 +1774,7 @@
     els.markdownPreviewCloseBtn.addEventListener("click", function () {
       state.activeMarkdownPath = null;
       els.markdownPreviewWrap.classList.add("hidden");
+      els.markdownList.classList.remove("has-preview");
       renderMarkdownList();
     });
 

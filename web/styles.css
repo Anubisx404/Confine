@@ -1266,14 +1266,106 @@ body {
   flex: 1 1 auto;
 }
 
+.markdown-scope-bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  margin-top: var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: 2px;
+  background-color: var(--bg-recessed);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.markdown-scope-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-1);
+  border: none;
+  border-right: 1px solid var(--border-hairline);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.markdown-scope-btn:last-child {
+  border-right: none;
+}
+
+.markdown-scope-btn:hover {
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.markdown-scope-btn.active {
+  background-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.markdown-scope-btn:focus-visible,
+.markdown-open-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.scope-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  opacity: 0.82;
+}
+
 .markdown-list {
   display: flex;
   flex-direction: column;
   gap: 4px;
   margin-top: 8px;
-  max-height: 220px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+}
+
+.markdown-list.has-preview {
+  flex: 0 0 auto;
+  max-height: 220px;
+}
+
+.markdown-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--space-2);
+  padding: 2px 2px 4px;
+  border-bottom: 1px solid var(--border-hairline);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
+.markdown-group-header:first-child {
+  margin-top: 0;
+}
+
+.markdown-tag {
   flex-shrink: 0;
+  padding: 1px 5px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 2px;
+  background-color: var(--bg-panel);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
 }
 
 .markdown-item {

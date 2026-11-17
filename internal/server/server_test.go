@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"confine/internal/search"
 )
 
 func createSampleWorkspace(t *testing.T) string {
@@ -691,5 +693,62 @@ func TestPickFolderEndpoint(t *testing.T) {
 	h.ServeHTTP(recErr, httptest.NewRequest(http.MethodPost, "/api/pick-folder", nil))
 	if recErr.Code != http.StatusInternalServerError {
 		t.Fatalf("POST /api/pick-folder error status = %d, want 500", recErr.Code)
+	}
+}
+
+func TestMarkdownsIncludesNestedReadmesAndGitignoredPlans(t *testing.T) {
+	ws := createSampleWorkspace(t)
+	writeFile := func(rel, content string) {
+		t.Helper()
+		full := filepath.Join(ws, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", rel, err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+	writeFile(".gitignore", "docs/\n")
+	writeFile("pkg/README.md", "# Pkg Docs\nDetails.\n")
+	writeFile("PLAN.md", "# Master Plan\nStep 1.\n")
+	writeFile("docs/plans/git-intel.md", "# Git Intel Plan\nRoadmap.\n")
+
+	srv, err := NewServer(ws, "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("NewServer failed: %v", err)
+	}
+	h := srv.Handler()
+
+	recMD := httptest.NewRecorder()
+	h.ServeHTTP(recMD, httptest.NewRequest(http.MethodGet, "/api/markdowns", nil))
+	if recMD.Code != http.StatusOK {
+		t.Fatalf("GET /api/markdowns status = %d", recMD.Code)
+	}
+	var resp MarkdownsResponse
+	if err := json.Unmarshal(recMD.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode MarkdownsResponse: %v", err)
+	}
+
+	byPath := make(map[string]search.MarkdownEntry, len(resp.Items))
+	for _, item := range resp.Items {
+		byPath[item.RelPath] = item
+	}
+	if got, ok := byPath["README.md"]; !ok || got.Category != "readme" || !got.InMap {
+		t.Fatalf("unexpected root README.md entry: %+v", got)
+	}
+	if got, ok := byPath["pkg/README.md"]; !ok || got.Category != "readme" || !got.InMap {
+		t.Fatalf("unexpected pkg/README.md entry: %+v", got)
+	}
+	if got, ok := byPath["PLAN.md"]; !ok || got.Category != "plan" || !got.InMap {
+		t.Fatalf("unexpected PLAN.md entry: %+v", got)
+	}
+	if got, ok := byPath["docs/plans/git-intel.md"]; !ok || got.Category != "plan" || got.InMap {
+		t.Fatalf("expected gitignored docs/plans/git-intel.md with category=plan inMap=false, got %+v", got)
+	}
+
+	recFile := httptest.NewRecorder()
+	h.ServeHTTP(recFile, httptest.NewRequest(http.MethodGet, "/api/file?path=docs/plans/git-intel.md", nil))
+	if recFile.Code != http.StatusOK {
+		t.Fatalf("GET /api/file for gitignored plan status = %d", recFile.Code)
 	}
 }

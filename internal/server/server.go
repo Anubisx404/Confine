@@ -172,22 +172,33 @@ func (s *Server) OpenWorkspaceWithExcludes(rootPath string, excludes []string) e
 	s.openMu.Lock()
 	defer s.openMu.Unlock()
 
-	tree, err := indexer.IndexDirectoryWithOptions(absRoot, normExcludes)
+	snap, err := buildSnapshot(absRoot, normExcludes)
 	if err != nil {
 		return fmt.Errorf("failed to index workspace: %w", err)
 	}
+	s.Root = snap.Tree.RootPath
+	s.snapshot.Store(snap)
+	return nil
+}
+
+func buildSnapshot(rootPath string, excludes []string) (*Snapshot, error) {
+	normExcludes := indexer.NormalizeExcludes(excludes)
+	tree, err := indexer.IndexDirectoryWithOptions(rootPath, normExcludes)
+	if err != nil {
+		return nil, err
+	}
 	slocLayout := treemap.ComputeLayout(tree, "sloc")
 	searchIdx := search.NewIndex(tree, slocLayout)
+	if extraDocs, scanErr := indexer.ScanProjectReadmesAndPlans(tree.RootPath, normExcludes); scanErr == nil && len(extraDocs) > 0 {
+		searchIdx.AddSupplementalMarkdowns(extraDocs)
+	}
 
-	snap := &Snapshot{
+	return &Snapshot{
 		Tree:     tree,
 		Excludes: normExcludes,
 		Layouts:  map[string]*treemap.LayoutResult{"sloc": slocLayout},
 		Search:   searchIdx,
-	}
-	s.Root = tree.RootPath
-	s.snapshot.Store(snap)
-	return nil
+	}, nil
 }
 
 func (s *Server) Handler() http.Handler {
@@ -479,29 +490,19 @@ func (s *Server) handleExcludes(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	normExcludes := indexer.NormalizeExcludes(next)
-	tree, err := indexer.IndexDirectoryWithOptions(snap.Tree.RootPath, normExcludes)
+	newSnap, err := buildSnapshot(snap.Tree.RootPath, next)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to re-index workspace: %v", err))
 		return
-	}
-	slocLayout := treemap.ComputeLayout(tree, "sloc")
-	searchIdx := search.NewIndex(tree, slocLayout)
-
-	newSnap := &Snapshot{
-		Tree:     tree,
-		Excludes: normExcludes,
-		Layouts:  map[string]*treemap.LayoutResult{"sloc": slocLayout},
-		Search:   searchIdx,
 	}
 	s.snapshot.Store(newSnap)
 
 	writeJSON(w, http.StatusOK, OpenResponse{
 		Ok:          true,
-		RootPath:    tree.RootPath,
-		ProjectName: tree.ProjectName,
-		Excludes:    copyStrings(normExcludes),
-		Stats:       statsFromTree(tree),
+		RootPath:    newSnap.Tree.RootPath,
+		ProjectName: newSnap.Tree.ProjectName,
+		Excludes:    copyStrings(newSnap.Excludes),
+		Stats:       statsFromTree(newSnap.Tree),
 	})
 }
 

@@ -207,8 +207,14 @@
 
         <section id="tab-markdowns" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-markdowns">
           <div class="markdown-controls">
-            <input id="markdown-filter" class="search-input" type="text" placeholder="Filter markdown docs..." autocomplete="off" spellcheck="false" aria-label="Filter markdown documents">
+            <input id="markdown-filter" class="search-input" type="text" placeholder="Filter READMEs, plans, docs..." autocomplete="off" spellcheck="false" aria-label="Filter markdown documents">
             <span id="markdown-count" class="section-count">0</span>
+          </div>
+          <div class="markdown-scope-bar" id="markdown-scope-bar" role="group" aria-label="Document categories">
+            <button class="markdown-scope-btn active" type="button" data-scope="all">All <span class="scope-count" id="scope-count-all">0</span></button>
+            <button class="markdown-scope-btn" type="button" data-scope="readme">READMEs <span class="scope-count" id="scope-count-readme">0</span></button>
+            <button class="markdown-scope-btn" type="button" data-scope="plan">Plans <span class="scope-count" id="scope-count-plan">0</span></button>
+            <button class="markdown-scope-btn" type="button" data-scope="doc">Other <span class="scope-count" id="scope-count-doc">0</span></button>
           </div>
           <div id="markdown-list" class="markdown-list"></div>
           <div id="markdown-preview-wrap" class="markdown-preview-wrap hidden">

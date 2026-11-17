@@ -43,6 +43,8 @@ type MarkdownEntry struct {
 	RelPath   string       `json:"relPath"`
 	Title     string       `json:"title"`
 	Category  string       `json:"category"`
+	AIKind    string       `json:"aiKind,omitempty"`
+	Language  string       `json:"language"`
 	InMap     bool         `json:"inMap"`
 	ByteSize  int64        `json:"byteSize"`
 	LineCount int          `json:"lineCount"`
@@ -100,22 +102,8 @@ func NewIndex(tree *indexer.TreeResult, layout *treemap.LayoutResult) *Index {
 		entry := buildFileEntry(node.RelPath, node.Lines, bounds, z)
 		files = append(files, entry)
 
-		if node.Stats.IsMarkdown {
-			name := node.Name
-			if name == "" {
-				name = path.Base(node.RelPath)
-			}
-			markdowns = append(markdowns, MarkdownEntry{
-				Name:      name,
-				RelPath:   node.RelPath,
-				Title:     extractMarkdownTitle(node.Lines, name),
-				Category:  ClassifyMarkdownCategory(node.RelPath),
-				InMap:     true,
-				ByteSize:  node.Stats.ByteSize,
-				LineCount: node.Stats.LineCount,
-				Bounds:    bounds,
-				Z:         z,
-			})
+		if node.Stats.IsMarkdown || indexer.IsAIPath(node.RelPath) {
+			markdowns = append(markdowns, newMarkdownEntry(node, true, bounds, z))
 		}
 	}
 
@@ -640,6 +628,9 @@ func extractMarkdownTitle(lines []string, fallback string) string {
 }
 
 func ClassifyMarkdownCategory(relPath string) string {
+	if indexer.IsAIPath(relPath) {
+		return "ai"
+	}
 	if indexer.IsReadmePath(relPath) {
 		return "readme"
 	}
@@ -647,6 +638,54 @@ func ClassifyMarkdownCategory(relPath string) string {
 		return "plan"
 	}
 	return "doc"
+}
+
+func newMarkdownEntry(node *indexer.Node, inMap bool, bounds treemap.Rect, z float64) MarkdownEntry {
+	name := node.Name
+	if name == "" {
+		name = path.Base(node.RelPath)
+	}
+	category := ClassifyMarkdownCategory(node.RelPath)
+	aiKind := ""
+	if category == "ai" {
+		aiKind = indexer.ClassifyAIKind(node.RelPath)
+	}
+	lang := node.Stats.Language
+	if lang == "" {
+		lang = "Markdown"
+	}
+	return MarkdownEntry{
+		Name:      name,
+		RelPath:   node.RelPath,
+		Title:     extractDocTitle(node.Lines, name),
+		Category:  category,
+		AIKind:    aiKind,
+		Language:  lang,
+		InMap:     inMap,
+		ByteSize:  node.Stats.ByteSize,
+		LineCount: node.Stats.LineCount,
+		Bounds:    bounds,
+		Z:         z,
+	}
+}
+
+func extractDocTitle(lines []string, fallback string) string {
+	if len(lines) > 0 && strings.TrimSpace(lines[0]) == "---" {
+		limit := minInt(len(lines), 40)
+		for i := 1; i < limit; i++ {
+			trimmed := strings.TrimSpace(lines[i])
+			if trimmed == "---" {
+				break
+			}
+			if strings.HasPrefix(trimmed, "name:") {
+				value := strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "name:")), "\"'")
+				if value != "" {
+					return value
+				}
+			}
+		}
+	}
+	return extractMarkdownTitle(lines, fallback)
 }
 
 func (idx *Index) AddSupplementalMarkdowns(nodes []*indexer.Node) {
@@ -670,19 +709,7 @@ func (idx *Index) AddSupplementalMarkdowns(nodes []*indexer.Node) {
 			continue
 		}
 		seen[node.RelPath] = struct{}{}
-		name := node.Name
-		if name == "" {
-			name = path.Base(node.RelPath)
-		}
-		idx.markdowns = append(idx.markdowns, MarkdownEntry{
-			Name:      name,
-			RelPath:   node.RelPath,
-			Title:     extractMarkdownTitle(node.Lines, name),
-			Category:  ClassifyMarkdownCategory(node.RelPath),
-			InMap:     false,
-			ByteSize:  node.Stats.ByteSize,
-			LineCount: node.Stats.LineCount,
-		})
+		idx.markdowns = append(idx.markdowns, newMarkdownEntry(node, false, treemap.Rect{}, 0))
 		added = true
 	}
 	if added {

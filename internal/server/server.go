@@ -189,7 +189,7 @@ func buildSnapshot(rootPath string, excludes []string) (*Snapshot, error) {
 	}
 	slocLayout := treemap.ComputeLayout(tree, "sloc")
 	searchIdx := search.NewIndex(tree, slocLayout)
-	if extraDocs, scanErr := indexer.ScanProjectReadmesAndPlans(tree.RootPath, normExcludes); scanErr == nil && len(extraDocs) > 0 {
+	if extraDocs, scanErr := indexer.ScanProjectDocs(tree.RootPath, normExcludes); scanErr == nil && len(extraDocs) > 0 {
 		searchIdx.AddSupplementalMarkdowns(extraDocs)
 	}
 

@@ -534,7 +534,7 @@ func TestScanProjectReadmesAndPlans(t *testing.T) {
 	writeTestFile(t, root, "docs/notes.md", []byte("# Random Note\n"))
 	writeTestFile(t, root, "node_modules/dep/README.md", []byte("# Ignored Dep\n"))
 
-	docs, err := ScanProjectReadmesAndPlans(root, nil)
+	docs, err := ScanProjectDocs(root, nil)
 	if err != nil {
 		t.Fatalf("ScanProjectReadmesAndPlans error: %v", err)
 	}
@@ -554,13 +554,73 @@ func TestScanProjectReadmesAndPlans(t *testing.T) {
 		t.Fatalf("non-plan non-readme docs/notes.md should not be in supplemental scan")
 	}
 
-	excludedDocs, err := ScanProjectReadmesAndPlans(root, []string{"docs/"})
+	excludedDocs, err := ScanProjectDocs(root, []string{"docs/"})
 	if err != nil {
-		t.Fatalf("ScanProjectReadmesAndPlans excluded error: %v", err)
+		t.Fatalf("ScanProjectDocs excluded error: %v", err)
 	}
 	for _, d := range excludedDocs {
 		if d.RelPath == "docs/plans/future-plan.md" {
 			t.Fatalf("expected runtime exclude docs/ to prune docs/plans/future-plan.md")
 		}
+	}
+}
+
+func TestAIPathDetectionAndKinds(t *testing.T) {
+	cases := []struct {
+		path string
+		isAI bool
+		kind string
+	}{
+		{"AGENTS.md", true, "instructions"},
+		{"CLAUDE.md", true, "instructions"},
+		{"GEMINI.md", true, "instructions"},
+		{".cursorrules", true, "rule"},
+		{".cursor/rules/style.mdc", true, "rule"},
+		{".agents/skills/deploy/SKILL.md", true, "skill"},
+		{"tools/skills/x/SKILL.md", true, "skill"},
+		{".claude/agents/reviewer.md", true, "agent"},
+		{".claude/commands/ship.md", true, "command"},
+		{".agents/workflows/release.md", true, "workflow"},
+		{".agents/hooks.json", true, "hook"},
+		{".agents/hooks/guard.mjs", true, "hook"},
+		{".mcp.json", true, "mcp"},
+		{".github/copilot-instructions.md", true, "instructions"},
+		{".github/prompts/review.prompt.md", true, "prompt"},
+		{".gemini/settings.json", true, "config"},
+		{".github/workflows/ci.yml", false, ""},
+		{".agents/logo.png", false, ""},
+		{"src/main.go", false, ""},
+		{"README.md", false, ""},
+	}
+	for _, c := range cases {
+		if got := IsAIPath(c.path); got != c.isAI {
+			t.Fatalf("IsAIPath(%q) = %v, want %v", c.path, got, c.isAI)
+		}
+		if c.isAI {
+			if got := ClassifyAIKind(c.path); got != c.kind {
+				t.Fatalf("ClassifyAIKind(%q) = %q, want %q", c.path, got, c.kind)
+			}
+		}
+	}
+
+	root := t.TempDir()
+	writeTestFile(t, root, ".gitignore", []byte(".claude/\n"))
+	writeTestFile(t, root, "AGENTS.md", []byte("# Agent Guide\n"))
+	writeTestFile(t, root, ".claude/skills/lint/SKILL.md", []byte("---\nname: lint-fixer\n---\n# Lint\n"))
+	writeTestFile(t, root, ".claude/settings.json", []byte("{\"a\":1}\n"))
+	writeTestFile(t, root, "main.go", []byte("package main\n"))
+	docs, err := ScanProjectDocs(root, nil)
+	if err != nil {
+		t.Fatalf("ScanProjectDocs error: %v", err)
+	}
+	langs := make(map[string]string, len(docs))
+	for _, d := range docs {
+		langs[d.RelPath] = d.Stats.Language
+	}
+	if langs["AGENTS.md"] != "Markdown" || langs[".claude/skills/lint/SKILL.md"] != "Markdown" || langs[".claude/settings.json"] != "JSON" {
+		t.Fatalf("unexpected AI doc scan result: %v", langs)
+	}
+	if _, ok := langs["main.go"]; ok {
+		t.Fatalf("main.go must not be a supplemental doc")
 	}
 }

@@ -129,6 +129,7 @@ Confine/
 ## Roadmap
 
 - **[Git & GitHub Spatial Intelligence Plan](docs/plans/git-and-github-spatial-intelligence-plan.md)** — Working-tree status overlays, `Changed Only` spotlight filter, `churn` / `hotspot` / `freshness` / `ownership` presets, zero-checkout branch/tag snapshot switcher, `base..head` treemap diff explorer, Focus Card diff gutter + `[c`/`]c` hunk navigation + blame strip, co-change coupling inspector, and `.git/config` GitHub permalinks.
+- **[AI Agent Context Navigation Plan](docs/plans/ai-agent-context-navigation-plan.md)** — `internal/agentctx` symbol/import-graph ranker & token-budgeted `context_pack`, stdio MCP server (`confine mcp`), CLI/HTTP `/api/agent/*` endpoints, and Agent Lens UI highlighting.
 
 ---
 

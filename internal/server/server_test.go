@@ -752,3 +752,65 @@ func TestMarkdownsIncludesNestedReadmesAndGitignoredPlans(t *testing.T) {
 		t.Fatalf("GET /api/file for gitignored plan status = %d", recFile.Code)
 	}
 }
+
+func TestMarkdownsIncludesAIAgentFiles(t *testing.T) {
+	ws := createSampleWorkspace(t)
+	writeFile := func(rel, content string) {
+		t.Helper()
+		full := filepath.Join(ws, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", rel, err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+	writeFile(".gitignore", ".gemini/\n")
+	writeFile("AGENTS.md", "# Agent Rules\n")
+	writeFile(".agents/skills/review/SKILL.md", "---\nname: code-review\ndescription: x\n---\n# Review\n")
+	writeFile(".agents/hooks.json", "{\"hooks\":[]}\n")
+	writeFile(".gemini/settings.json", "{\"model\":\"x\"}\n")
+
+	srv, err := NewServer(ws, "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("NewServer failed: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/markdowns", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/markdowns status = %d", rec.Code)
+	}
+	var resp MarkdownsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	byPath := make(map[string]search.MarkdownEntry, len(resp.Items))
+	for _, item := range resp.Items {
+		byPath[item.RelPath] = item
+	}
+
+	checks := []struct {
+		path  string
+		kind  string
+		lang  string
+		inMap bool
+		title string
+	}{
+		{"AGENTS.md", "instructions", "Markdown", true, "Agent Rules"},
+		{".agents/skills/review/SKILL.md", "skill", "Markdown", true, "code-review"},
+		{".agents/hooks.json", "hook", "JSON", true, "hooks.json"},
+		{".gemini/settings.json", "config", "JSON", false, "settings.json"},
+	}
+	for _, c := range checks {
+		got, ok := byPath[c.path]
+		if !ok {
+			t.Fatalf("missing AI entry %s in %+v", c.path, resp.Items)
+		}
+		if got.Category != "ai" || got.AIKind != c.kind || got.Language != c.lang || got.InMap != c.inMap || got.Title != c.title {
+			t.Fatalf("unexpected AI entry for %s: %+v", c.path, got)
+		}
+	}
+	if _, ok := byPath["main.go"]; ok {
+		t.Fatalf("main.go must not appear in markdowns catalog")
+	}
+}

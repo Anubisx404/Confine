@@ -46,6 +46,7 @@
     searchDebounce: null,
     markdowns: [],
     markdownScope: "all",
+    markdownAIKind: "all",
     activeMarkdownPath: null,
     history: [],
     historyIndex: -1,
@@ -135,6 +136,8 @@
     scopeCountAll: document.getElementById("scope-count-all"),
     scopeCountReadme: document.getElementById("scope-count-readme"),
     scopeCountPlan: document.getElementById("scope-count-plan"),
+    scopeCountAi: document.getElementById("scope-count-ai"),
+    markdownAiKinds: document.getElementById("markdown-ai-kinds"),
     scopeCountDoc: document.getElementById("scope-count-doc"),
     markdownList: document.getElementById("markdown-list"),
     markdownPreviewWrap: document.getElementById("markdown-preview-wrap"),
@@ -1190,8 +1193,22 @@
     return out.join("\n");
   }
 
+  const AI_KIND_ORDER = ["instructions", "skill", "rule", "agent", "workflow", "command", "prompt", "hook", "mcp", "config"];
+  const AI_KIND_LABELS = {
+    instructions: "Instructions",
+    skill: "Skills",
+    rule: "Rules",
+    agent: "Agents",
+    workflow: "Workflows",
+    command: "Commands",
+    prompt: "Prompts",
+    hook: "Hooks",
+    mcp: "MCP",
+    config: "Config"
+  };
+
   function classifyDocCategory(item) {
-    if (item && (item.category === "readme" || item.category === "plan" || item.category === "doc")) {
+    if (item && (item.category === "readme" || item.category === "plan" || item.category === "doc" || item.category === "ai")) {
       return item.category;
     }
     const slash = String((item && item.relPath) || "").toLowerCase();
@@ -1205,9 +1222,14 @@
     return "doc";
   }
 
+  function aiKindOf(item) {
+    return item && AI_KIND_LABELS[item.aiKind] ? item.aiKind : "config";
+  }
+
   function updateMarkdownScopeCounts(items) {
     let readmes = 0;
     let plans = 0;
+    let ais = 0;
     let docs = 0;
     for (const item of items) {
       const cat = classifyDocCategory(item);
@@ -1215,6 +1237,8 @@
         readmes++;
       } else if (cat === "plan") {
         plans++;
+      } else if (cat === "ai") {
+        ais++;
       } else {
         docs++;
       }
@@ -1222,9 +1246,58 @@
     els.scopeCountAll.textContent = String(items.length);
     els.scopeCountReadme.textContent = String(readmes);
     els.scopeCountPlan.textContent = String(plans);
+    els.scopeCountAi.textContent = String(ais);
     els.scopeCountDoc.textContent = String(docs);
     for (const btn of els.markdownScopeBtns) {
       btn.classList.toggle("active", btn.dataset.scope === state.markdownScope);
+    }
+  }
+
+  function renderAIKindChips(aiItems) {
+    const counts = {};
+    for (const item of aiItems) {
+      const kind = aiKindOf(item);
+      counts[kind] = (counts[kind] || 0) + 1;
+    }
+    if (state.markdownAIKind !== "all" && !counts[state.markdownAIKind]) {
+      state.markdownAIKind = "all";
+    }
+    els.markdownAiKinds.innerHTML = "";
+    const chips = [{ key: "all", label: "All", count: aiItems.length }];
+    for (const kind of AI_KIND_ORDER) {
+      if (counts[kind]) {
+        chips.push({ key: kind, label: AI_KIND_LABELS[kind], count: counts[kind] });
+      }
+    }
+    for (const chip of chips) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ai-kind-btn" + (state.markdownAIKind === chip.key ? " active" : "");
+      btn.setAttribute("aria-pressed", state.markdownAIKind === chip.key ? "true" : "false");
+      btn.textContent = chip.label + " " + chip.count;
+      btn.addEventListener("click", function () {
+        state.markdownAIKind = chip.key;
+        renderMarkdownList();
+      });
+      els.markdownAiKinds.appendChild(btn);
+    }
+  }
+
+  function appendMarkdownGroup(label, items) {
+    if (items.length === 0) {
+      return;
+    }
+    const hdr = document.createElement("div");
+    hdr.className = "markdown-group-header";
+    const labelSpan = document.createElement("span");
+    labelSpan.textContent = label;
+    const countSpan = document.createElement("span");
+    countSpan.textContent = String(items.length);
+    hdr.appendChild(labelSpan);
+    hdr.appendChild(countSpan);
+    els.markdownList.appendChild(hdr);
+    for (const item of items) {
+      els.markdownList.appendChild(createMarkdownRow(item));
     }
   }
 
@@ -1249,6 +1322,15 @@
 
     row.appendChild(openBtn);
 
+    const tags = document.createElement("span");
+    tags.className = "markdown-row-tags";
+    if (classifyDocCategory(item) === "ai") {
+      const kindTag = document.createElement("span");
+      kindTag.className = "markdown-tag ai-kind";
+      kindTag.textContent = aiKindOf(item);
+      tags.appendChild(kindTag);
+    }
+
     if (item.inMap !== false) {
       const mapBtn = document.createElement("button");
       mapBtn.type = "button";
@@ -1258,14 +1340,15 @@
       mapBtn.addEventListener("click", function () {
         selectAndFly(item.relPath, null, "markdown");
       });
-      row.appendChild(mapBtn);
+      tags.appendChild(mapBtn);
     } else {
       const tag = document.createElement("span");
       tag.className = "markdown-tag";
       tag.textContent = "off-map";
       tag.title = "Discovered outside treemap scope (.gitignore)";
-      row.appendChild(tag);
+      tags.appendChild(tag);
     }
+    row.appendChild(tags);
     return row;
   }
 
@@ -1289,7 +1372,10 @@
       if (state.activeMarkdownPath !== relPath) {
         return;
       }
-      els.markdownPreviewBody.innerHTML = renderMarkdownToHtml(fileData.lines || []);
+      const previewLang = (matchedEntry && matchedEntry.language) || fileData.language || "Markdown";
+      els.markdownPreviewBody.innerHTML = previewLang === "Markdown"
+        ? renderMarkdownToHtml(fileData.lines || [])
+        : renderCodeBlockHtml(fileData.lines || [], previewLang);
     } catch (err) {
       els.markdownPreviewBody.innerHTML = '<div class="empty-state">Failed to load markdown: ' + escapeHtml(err.message) + "</div>";
     }
@@ -1306,17 +1392,29 @@
         (item.title || "").toLowerCase().includes(filter) ||
         (item.relPath || "").toLowerCase().includes(filter) ||
         (item.name || "").toLowerCase().includes(filter) ||
-        cat.includes(filter)
+        cat.includes(filter) ||
+        (item.aiKind || "").includes(filter)
       );
     });
 
     updateMarkdownScopeCounts(textMatched);
 
-    const filtered = state.markdownScope === "all"
+    const scoped = state.markdownScope === "all"
       ? textMatched
       : textMatched.filter(function (item) {
           return classifyDocCategory(item) === state.markdownScope;
         });
+
+    const showingAI = state.markdownScope === "ai";
+    els.markdownAiKinds.classList.toggle("hidden", !showingAI || scoped.length === 0);
+    if (showingAI) {
+      renderAIKindChips(scoped);
+    }
+    const filtered = showingAI && state.markdownAIKind !== "all"
+      ? scoped.filter(function (item) {
+          return aiKindOf(item) === state.markdownAIKind;
+        })
+      : scoped;
 
     els.markdownCount.textContent = String(filtered.length);
     els.markdownList.classList.toggle("has-preview", !els.markdownPreviewWrap.classList.contains("hidden"));
@@ -1331,10 +1429,30 @@
         empty.textContent = "No matching README files.";
       } else if (state.markdownScope === "plan") {
         empty.textContent = "No matching plan files.";
+      } else if (showingAI) {
+        empty.textContent = "No AI agent files found (AGENTS.md, CLAUDE.md, .agents/, .claude/, .cursor/, skills, rules).";
       } else {
         empty.textContent = "No matching markdown files.";
       }
       els.markdownList.appendChild(empty);
+      return;
+    }
+
+    if (showingAI) {
+      if (state.markdownAIKind !== "all") {
+        for (const item of filtered) {
+          els.markdownList.appendChild(createMarkdownRow(item));
+        }
+        return;
+      }
+      const byKind = {};
+      for (const item of filtered) {
+        const kind = aiKindOf(item);
+        (byKind[kind] = byKind[kind] || []).push(item);
+      }
+      for (const kind of AI_KIND_ORDER) {
+        appendMarkdownGroup(AI_KIND_LABELS[kind], byKind[kind] || []);
+      }
       return;
     }
 
@@ -1345,33 +1463,14 @@
       return;
     }
 
-    const groups = [
-      { key: "readme", label: "READMEs", items: [] },
-      { key: "plan", label: "Plans", items: [] },
-      { key: "doc", label: "Other Docs", items: [] }
-    ];
-    const groupMap = { readme: groups[0], plan: groups[1], doc: groups[2] };
+    const groups = { readme: [], plan: [], ai: [], doc: [] };
     for (const item of filtered) {
-      groupMap[classifyDocCategory(item)].items.push(item);
+      groups[classifyDocCategory(item)].push(item);
     }
-
-    for (const group of groups) {
-      if (group.items.length === 0) {
-        continue;
-      }
-      const hdr = document.createElement("div");
-      hdr.className = "markdown-group-header";
-      const labelSpan = document.createElement("span");
-      labelSpan.textContent = group.label;
-      const countSpan = document.createElement("span");
-      countSpan.textContent = String(group.items.length);
-      hdr.appendChild(labelSpan);
-      hdr.appendChild(countSpan);
-      els.markdownList.appendChild(hdr);
-      for (const item of group.items) {
-        els.markdownList.appendChild(createMarkdownRow(item));
-      }
-    }
+    appendMarkdownGroup("READMEs", groups.readme);
+    appendMarkdownGroup("Plans", groups.plan);
+    appendMarkdownGroup("AI Agent Files", groups.ai);
+    appendMarkdownGroup("Other Docs", groups.doc);
   }
 
   async function loadMarkdowns() {

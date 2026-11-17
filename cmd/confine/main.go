@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -20,7 +19,8 @@ import (
 func main() {
 	path := flag.String("path", ".", "target codebase path")
 	port := flag.Int("port", 8080, "HTTP server port")
-	openBrowser := flag.Bool("open", true, "open browser on startup")
+	openUI := flag.Bool("open", true, "open desktop window or browser on startup")
+	appMode := flag.Bool("app", true, "open in a standalone desktop app window when available")
 	excludeFlag := flag.String("exclude", "", "comma-separated exclude patterns")
 	flag.Parse()
 
@@ -60,9 +60,16 @@ func main() {
 	url := fmt.Sprintf("http:%s%s127.0.0.1:%d", "/", "/", actualPort)
 	fmt.Printf("Confine serving %s at %s\n", srv.Root, url)
 
-	if *openBrowser {
-		go launchBrowser(url)
+	if *openUI && *appMode {
+		maybeDetachOwnConsole()
 	}
+
+	var appDoneCh <-chan struct{}
+	appCleanup := func() {}
+	if *openUI {
+		appDoneCh, appCleanup = launchUI(url, *appMode)
+	}
+	defer appCleanup()
 
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -74,16 +81,9 @@ func main() {
 
 	select {
 	case <-sigCtx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			fmt.Fprintf(os.Stderr, "shutdown error: %v\n", err)
-			os.Exit(1)
-		}
-		if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
-			fmt.Fprintf(os.Stderr, "server error: %v\n", err)
-			os.Exit(1)
-		}
+		shutdownServer(srv, errCh)
+	case <-appDoneCh:
+		shutdownServer(srv, errCh)
 	case err := <-errCh:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			fmt.Fprintf(os.Stderr, "server error: %v\n", err)
@@ -92,15 +92,55 @@ func main() {
 	}
 }
 
-func launchBrowser(url string) {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
-	case "darwin":
-		cmd = exec.Command("open", url)
-	default:
-		cmd = exec.Command("xdg-open", url)
+func launchChromiumApp(appExe, url string, extraFlags ...string) (<-chan struct{}, func(), bool) {
+	profileDir, err := os.MkdirTemp("", "confine-app-*")
+	if err != nil {
+		return nil, func() {}, false
 	}
-	_ = cmd.Start()
+
+	args := []string{
+		"--app=" + url,
+		"--user-data-dir=" + profileDir,
+		"--no-first-run",
+		"--no-default-browser-check",
+		"--window-size=1440,920",
+	}
+	args = append(args, extraFlags...)
+
+	cmd := exec.Command(appExe, args...)
+	startedAt := time.Now()
+	if err := cmd.Start(); err != nil {
+		_ = os.RemoveAll(profileDir)
+		return nil, func() {}, false
+	}
+
+	doneCh := make(chan struct{})
+	go func() {
+		waitErr := cmd.Wait()
+		_ = os.RemoveAll(profileDir)
+		if time.Since(startedAt) >= 500*time.Millisecond || waitErr != nil {
+			close(doneCh)
+		}
+	}()
+
+	cleanup := func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		_ = os.RemoveAll(profileDir)
+	}
+	return doneCh, cleanup, true
+}
+
+func shutdownServer(srv *server.Server, errCh <-chan error) {
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		fmt.Fprintf(os.Stderr, "shutdown error: %v\n", err)
+		os.Exit(1)
+	}
+	if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
+		fmt.Fprintf(os.Stderr, "server error: %v\n", err)
+		os.Exit(1)
+	}
 }

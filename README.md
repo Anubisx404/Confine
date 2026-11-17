@@ -68,7 +68,8 @@ go build -o confine ./cmd/confine
 | :--- | :--- | :--- |
 | `-path` | `.` | Target codebase directory to index and serve |
 | `-port` | `8080` | Local HTTP server port |
-| `-open` | `true` | Automatically open the UI in the default browser on startup |
+| `-open` | `true` | Automatically open the UI on startup |
+| `-app` | `true` | Launch in a standalone desktop app window (`msedge`/`chrome --app`) when available; set `-app=false` for regular browser tab |
 | `-exclude` | `""` | Comma-separated initial exclude patterns (paths, folders, or globs) |
 
 ---
